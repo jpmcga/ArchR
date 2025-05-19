@@ -292,7 +292,8 @@ getMatrixFromProject <- function(
   verbose = TRUE,
   binarize = FALSE,
   threads = getArchRThreads(),
-  logFile = createLogFile("getMatrixFromProject")
+  logFile = createLogFile("getMatrixFromProject"),
+  asMatrix = FALSE
   ){
 
   .validInput(input = ArchRProj, name = "ArchRProj", valid = c("ArchRProj"))
@@ -384,6 +385,13 @@ getMatrixFromProject <- function(
     m <- lapply(seq_along(seL), function(j){
       assays(seL[[j]])[[nAssays[i]]]
     }) %>% Reduce("cbind", .)
+    
+    # Convert to dense matrix if asMatrix is TRUE
+    if (asMatrix) {
+      message("Converting sparse matrix to dense matrix for assay: ", nAssays[i])
+      m <- as.matrix(m)
+    }
+    
     m
   }) %>% SimpleList()
   names(asy) <- nAssays
