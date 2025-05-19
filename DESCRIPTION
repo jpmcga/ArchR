@@ -1,4 +1,4 @@
-Package: ArchR
+Package: ArchRcustom
 Type: Package
 Date: 2025-01-19
 Title: Analyzing single-cell regulatory chromatin in R.
