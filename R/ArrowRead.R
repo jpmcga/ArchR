@@ -382,17 +382,19 @@ getMatrixFromProject <- function(
   nAssays <- names(assays(seL[[1]]))
   asy <- lapply(seq_along(nAssays), function(i){
     .logDiffTime(sprintf("Organizing Assays (%s of %s)", i, length(nAssays)), t1 = tstart, verbose = verbose, logFile = logFile)
+
     m <- lapply(seq_along(seL), function(j){
-      assays(seL[[j]])[[nAssays[i]]]
-    }) %>% Reduce("cbind", .)
-    
-    # Convert to dense matrix if asMatrix is TRUE
-    if (asMatrix) {
-      message("Converting sparse matrix to dense matrix for assay: ", nAssays[i])
-      m <- as.matrix(m)
-    }
-    
-    m
+      mat <- assays(seL[[j]])[[nAssays[i]]]
+
+      if (asMatrix) {
+        message("Converting sparse matrix to dense matrix for object ", j, ", assay: ", nAssays[i])
+        mat <- as.matrix(mat)
+      }
+
+      return(mat)
+    }) %>% Reduce("cbind", .)  # combines dense matrices safely
+
+    return(m)
   }) %>% SimpleList()
   names(asy) <- nAssays
   
