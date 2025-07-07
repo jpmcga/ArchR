@@ -283,51 +283,59 @@ getImputeWeights <- function(ArchRProj = NULL){
 #'
 #' @export
 imputeMatrix <- function(
-  mat = NULL, 
+  mat = NULL,
   imputeWeights = NULL,
   threads = getArchRThreads(),
   verbose = FALSE,
   logFile = createLogFile("imputeMatrix")
-  ){
-
-  .validInput(input = mat, name = "mat", valid = c("matrix", "sparseMatrix"))
+) {
+  .validInput(input = mat, name = "mat", valid = c("matrix", "sparseMatrix", "spam"))
   .validInput(input = imputeWeights, name = "imputeWeights", valid = c("list"))
   .validInput(input = threads, name = "threads", valid = c("integer"))
   .validInput(input = verbose, name = "verbose", valid = c("boolean"))
   .validInput(input = logFile, name = "logFile", valid = c("character"))
-
-  if(!inherits(imputeWeights$Weights, "SimpleList") & !inherits(imputeWeights$Weights, "list")){
-    .logMessage("Weights are not a list, Please re-run addImputeWeights (update)!", logFile = logFile)
+  if (
+    !inherits(imputeWeights$Weights, "SimpleList") &
+      !inherits(imputeWeights$Weights, "list")
+  ) {
+    .logMessage(
+      "Weights are not a list, Please re-run addImputeWeights (update)!",
+      logFile = logFile
+    )
     stop("Weights are not a list, Please re-run addImputeWeights (update)!")
   }
-
   .startLogging(logFile = logFile)
-  .logThis(mget(names(formals()),sys.frame(sys.nframe())), "imputeMatrix Input-Parameters", logFile = logFile)  
+  .logThis(
+    mget(names(formals()), sys.frame(sys.nframe())),
+    "imputeMatrix Input-Parameters",
+    logFile = logFile
+  )
 
   weightList <- imputeWeights$Weights
   .logThis(mat, "mat", logFile = logFile)
   .logThis(weightList, "weightList", logFile = logFile)
 
   tstart <- Sys.time()
-  
-  imputeMat <- lapply(seq_along(weightList), function(x){
-    
+
+  # Determine matrix type for appropriate operations
+  is_spam <- inherits(mat, "spam")
+
+  imputeMat <- lapply(seq_along(weightList), function(x) {
+
     .logDiffTime(sprintf("Imputing Matrix (%s of %s)", x, length(weightList)), tstart, verbose = verbose, logFile = logFile)
 
-    if(is.character(weightList[[x]])){
-
+    if (is.character(weightList[[x]])) {
       .logMessage("Using weights on disk", logFile = logFile)
 
-      if(!file.exists(weightList[[x]])){
+      if (!file.exists(weightList[[x]])) {
         .logMessage("Weight File Does Not Exist! Please re-run addImputeWeights!", logFile = logFile)
         stop("Weight File Does Not Exist! Please re-run addImputeWeights!")
       }
-
       h5df <- h5ls(weightList[[x]])
-      blocks <- gtools::mixedsort(grep("block",h5df$name,value=TRUE))
-      matx <- .safelapply(seq_along(blocks), function(y){
+      blocks <- gtools::mixedsort(grep("block", h5df$name, value = TRUE))
+      matx <- .safelapply(seq_along(blocks), function(y) {
 
-        if(verbose) message(y, " ", appendLF = FALSE)
+        if (verbose) message(y, " ", appendLF = FALSE)
         .logMessage(paste0(y, " of ", length(blocks)),  logFile = logFile)
 
         #Read In Weights and Names
@@ -337,7 +345,7 @@ imputeMatrix <- function(
         rownames(by) <- bn
 
         #Multiply
-        if(!all(paste0(bn) %in% colnames(mat))){
+        if (!all(paste0(bn) %in% colnames(mat))) {
           .logThis(paste0(bn), "Block cellNames", logFile = logFile)
           .logThis(colnames(mat), "Matrix cellNames", logFile = logFile)
           .logThis(paste0(bn)[paste0(bn) %ni% colnames(mat)], "Block cellNames not in matrix", logFile = logFile)
@@ -345,31 +353,113 @@ imputeMatrix <- function(
           stop("Not all cellNames from imputeWeights are present. If you subsetted cells from the original imputation, please re-run with addImputeWeights!")
         }
 
-        Matrix::t(by %*% Matrix::t(mat[, paste0(bn), drop = FALSE]))
-      
-      }, threads = threads) %>% Reduce("cbind", .)
+        # Handle matrix operations based on type
+        if (is_spam) {
+          # For spam matrices, use spam-specific operations
+          # Get column indices for subsetting
+          col_indices <- match(paste0(bn), colnames(mat))
+          mat_subset <- mat[, col_indices, drop = FALSE]
 
-      if(verbose) message("")
+          # Convert weight matrix to spam if needed
+          if (!inherits(by, "spam")) {
+            by_spam <- spam::as.spam(by)
+          } else {
+            by_spam <- by
+          }
 
-    }else{
+          # Matrix multiplication with spam
+          # t(by %*% t(mat_subset))
+          result <- spam::t.spam(by_spam %*% spam::t.spam(mat_subset))
+
+        } else {
+          # Original Matrix operations
+          result <- Matrix::t(by %*% Matrix::t(mat[, paste0(bn), drop = FALSE]))
+        }
+
+        return(result)
+
+      }, threads = threads) %>% {
+
+        if (is_spam) {
+          # Use spam cbind
+          do.call(spam::cbind.spam, .)
+
+        } else {
+          # Use regular cbind
+          Reduce("cbind", .)
+        }
+      }
+      if (verbose) message("")
+
+    } else {
 
       .logMessage("Using weights in memory", logFile = logFile)
 
-      matx <- .safelapply(seq_along(weightList[[x]]), function(y){
-        
-        if(verbose) message(y, " ", appendLF = FALSE)
+      matx <- .safelapply(seq_along(weightList[[x]]), function(y) {
+
+        if (verbose) message(y, " ", appendLF = FALSE)
         .logMessage(paste0(y, " of ", length(weightList[[x]])), logFile = logFile)
-        Matrix::t(as.matrix(weightList[[x]][[y]]) %*% Matrix::t(mat[, paste0(colnames(weightList[[x]][[y]])), drop = FALSE]))
 
-      }, threads = threads) %>% Reduce("cbind", .)
+        # Get weight matrix and cell names
+        weight_mat <- weightList[[x]][[y]]
+        weight_colnames <- colnames(weight_mat)
 
-      if(verbose) message("")
+        if (is_spam) {
+          # For spam matrices
+          col_indices <- match(paste0(weight_colnames), colnames(mat))
+          mat_subset <- mat[, col_indices, drop = FALSE]
 
+          # Convert weight matrix to spam if needed
+          if (!inherits(weight_mat, "spam")) {
+            weight_spam <- spam::as.spam(as.matrix(weight_mat))
+          } else {
+            weight_spam <- weight_mat
+          }
+
+          # Matrix multiplication
+          result <- spam::t.spam(weight_spam %*% spam::t.spam(mat_subset))
+
+        } else {
+
+          # Original Matrix operations
+          result <- Matrix::t(as.matrix(weight_mat) %*% Matrix::t(mat[, paste0(weight_colnames), drop = FALSE]))
+
+        }
+
+        return(result)
+
+      }, threads = threads) %>% {
+
+        if (is_spam) {
+          # Use spam cbind
+          do.call(spam::cbind.spam, .)
+
+        } else {
+          # Use regular cbind
+          Reduce("cbind", .)
+        }
+      }
+      if (verbose) message("")
     }
 
-    matx[, colnames(mat)] #Return Ordered
-  
-  }) %>% Reduce("+", .)
+    # Return ordered - handle both spam and Matrix
+    if (is_spam) {
+      # For spam matrices, reorder columns
+      col_order <- match(colnames(mat), colnames(matx))
+      matx[, col_order, drop = FALSE]
+    } else {
+      matx[, colnames(mat)] #Return Ordered
+    }
+
+  }) %>% {
+    if (is_spam) {
+      # Use spam addition
+      Reduce(function(a, b) a + b, .)
+    } else {
+      # Use regular addition
+      Reduce("+", .)
+    }
+  }
 
   #Compute Average
   imputeMat <- imputeMat / length(weightList)
@@ -377,9 +467,4 @@ imputeMatrix <- function(
   .logDiffTime("Finished Imputing Matrix", tstart, verbose = verbose, logFile = logFile)
 
   imputeMat
-
 }
-
-
-
-
