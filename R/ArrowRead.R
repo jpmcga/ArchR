@@ -293,8 +293,9 @@ getMatrixFromProject <- function(
   binarize = FALSE,
   threads = getArchRThreads(),
   logFile = createLogFile("getMatrixFromProject"),
-  asMatrix = FALSE
-  ){
+  asMatrix = FALSE,
+  useSpam64 = TRUE  # New parameter to enable spam64
+) {
 
   .validInput(input = ArchRProj, name = "ArchRProj", valid = c("ArchRProj"))
   .validInput(input = useMatrix, name = "useMatrix", valid = c("character"))
@@ -303,21 +304,31 @@ getMatrixFromProject <- function(
   .validInput(input = verbose, name = "verbose", valid = c("boolean"))
   .validInput(input = binarize, name = "binarize", valid = c("boolean"))
   .validInput(input = threads, name = "threads", valid = c("integer"))
-  
+  .validInput(input = asMatrix, name = "asMatrix", valid = c("boolean"))
+  .validInput(input = useSpam64, name = "useSpam64", valid = c("boolean"))
+
+  # Load spam64 if requested
+  if (useSpam64 && !asMatrix) {
+    library(spam)
+    library(spam64)
+    # Force 64-bit behavior
+    options(spam.force64 = TRUE)
+  }
+
   tstart <- Sys.time()
   .startLogging(logFile = logFile)
-  .logThis(mget(names(formals()),sys.frame(sys.nframe())), "getMatrixFromProject Input-Parameters", logFile = logFile)
+  .logThis(mget(names(formals()), sys.frame(sys.nframe())), "getMatrixFromProject Input-Parameters", logFile = logFile)
 
   ArrowFiles <- getArrowFiles(ArchRProj)
 
   cellNames <- ArchRProj$cellNames
 
   avMat <- getAvailableMatrices(ArchRProj)
-  if(useMatrix %ni% avMat){
+  if (useMatrix %ni% avMat) {
     stop("useMatrix is not in Available Matrices see getAvailableMatrices")
   }
 
-  seL <- .safelapply(seq_along(ArrowFiles), function(x){
+  seL <- .safelapply(seq_along(ArrowFiles), function(x) {
 
     .logDiffTime(paste0("Reading ", useMatrix," : ", names(ArrowFiles)[x], "(",x," of ",length(ArrowFiles),")"), 
       t1 = tstart, verbose = FALSE, logFile = logFile)
@@ -325,14 +336,14 @@ getMatrixFromProject <- function(
     allCells <- .availableCells(ArrowFile = ArrowFiles[x], subGroup = useMatrix)
     allCells <- allCells[allCells %in% cellNames]
 
-    if(length(allCells) != 0){
+    if (length(allCells) != 0) {
 
       o <- getMatrixFromArrow(
         ArrowFile = ArrowFiles[x],
         useMatrix = useMatrix,
         useSeqnames = useSeqnames,
         excludeChr = excludeChr,
-        cellNames = allCells, 
+        cellNames = allCells,
         ArchRProj = ArchRProj,
         verbose = FALSE,
         binarize = binarize,
@@ -344,65 +355,103 @@ getMatrixFromProject <- function(
 
       o
 
-    }else{
+    } else {
 
       NULL
-      
+
     }
 
-  }, threads = threads) 
+  }, threads = threads)
 
   #ColData
   .logDiffTime("Organizing colData", t1 = tstart, verbose = verbose, logFile = logFile)
-  cD <- lapply(seq_along(seL), function(x){
+  cD <- lapply(seq_along(seL), function(x) {
     colData(seL[[x]])
   }) %>% Reduce("rbind", .)
-  
+
   #RowData
   .logDiffTime("Organizing rowData", t1 = tstart, verbose = verbose, logFile = logFile)
   rD1 <- rowData(seL[[1]])
-  rD <- lapply(seq_along(seL), function(x){
+  rD <- lapply(seq_along(seL), function(x) {
     identical(rowData(seL[[x]]), rD1)
   }) %>% unlist %>% all
-  if(!rD){
+  if (!rD) {
     stop("Error with rowData being equal for every sample!")
   }
 
   #RowRanges
   .logDiffTime("Organizing rowRanges", t1 = tstart, verbose = verbose, logFile = logFile)
   rR1 <- rowRanges(seL[[1]])
-  rR <- lapply(seq_along(seL), function(x){
+  rR <- lapply(seq_along(seL), function(x) {
     identical(rowRanges(seL[[x]]), rR1)
   }) %>% unlist %>% all
-  if(!rR){
+  if (!rR) {
     stop("Error with rowRanges being equal for every sample!")
   }
 
   #Assays
   nAssays <- names(assays(seL[[1]]))
-  asy <- lapply(seq_along(nAssays), function(i){
+  asy <- lapply(seq_along(nAssays), function(i) {
     .logDiffTime(sprintf("Organizing Assays (%s of %s)", i, length(nAssays)), t1 = tstart, verbose = verbose, logFile = logFile)
 
-    m <- lapply(seq_along(seL), function(j){
-      mat <- assays(seL[[j]])[[nAssays[i]]]
-
-      if (asMatrix) {
-        message("Converting sparse matrix to dense matrix for object ", j, ", assay: ", nAssays[i])
+    if (asMatrix) {
+      # Original dense matrix approach
+      m <- lapply(seq_along(seL), function(j) {
+        mat <- assays(seL[[j]])[[nAssays[i]]]
+        message(
+            "Converting sparse matrix to dense matrix for object ",
+            j,
+            ", assay: ",
+            nAssays[i]
+        )
         mat <- as.matrix(mat)
-      }
+        return(mat)
+      }) %>% Reduce("cbind", .)
 
-      return(mat)
-    }) %>% Reduce("cbind", .)  # combines dense matrices safely
+    } else if (useSpam64) {
+      # Use spam64 for large sparse matrices
+      .logDiffTime(
+        "Converting to spam format for 64-bit support",
+        t1 = tstart,
+        verbose = verbose,
+        logFile = logFile
+      )
+
+      # Convert each matrix to spam format and combine
+      spam_matrices <- lapply(seq_along(seL), function(j) {
+
+        mat <- assays(seL[[j]])[[nAssays[i]]]
+        mat <- as(mat, "TsparseMatrix")
+        spam_mat <- spam::spam(
+            entries = mat@x,
+            rowpointers = mat@i + 1,
+            colindices = mat@j + 1,
+            dimension = dim(mat)
+        )
+        return(spam_mat)
+      })
+
+      # Combine spam matrices horizontally
+      m <- do.call(spam::cbind.spam, spam_matrices)
+
+    } else {
+
+      # Original sparse matrix approach (may hit limits)
+      m <- lapply(seq_along(seL), function(j) {
+        mat <- assays(seL[[j]])[[nAssays[i]]]
+        return(mat)
+      }) %>% Reduce("cbind", .)
+    }
 
     return(m)
   }) %>% SimpleList()
   names(asy) <- nAssays
-  
+
   .logDiffTime("Constructing SummarizedExperiment", t1 = tstart, verbose = verbose, logFile = logFile)
-  if(!is.null(rR1)){
+  if (!is.null(rR1)) {
     se <- SummarizedExperiment(assays = asy, colData = cD, rowRanges = rR1)
     se <- sort(se)
-  }else{
+  } else {
     se <- SummarizedExperiment(assays = asy, colData = cD, rowData = rD1)
   }
   rm(seL)
@@ -411,7 +460,7 @@ getMatrixFromProject <- function(
   .logDiffTime("Finished Matrix Creation", t1 = tstart, verbose = verbose, logFile = logFile)
 
   se
-  
+
 }
 
 #' Get a data matrix stored in an ArrowFile
