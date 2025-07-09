@@ -421,13 +421,7 @@ getMatrixFromProject <- function(
       spam_matrices <- lapply(seq_along(seL), function(j) {
 
         mat <- assays(seL[[j]])[[nAssays[i]]]
-        mat <- as(mat, "TsparseMatrix")
-        spam_mat <- spam::spam(
-            entries = mat@x,
-            rowpointers = mat@i + 1,
-            colindices = mat@j + 1,
-            dimension = dim(mat)
-        )
+        spam_mat <- spam::as.spam(as.matrix(mat))
         return(spam_mat)
       })
 
