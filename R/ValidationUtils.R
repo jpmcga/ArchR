@@ -59,6 +59,10 @@
 
       cv <- is(input, "dgCMatrix")
 
+    }else if(vi == "spam"){
+
+      cv <- is(input, "spam")
+
     }else if(vi == "character"){
 
       cv <- is.character(input)
