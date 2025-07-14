@@ -285,6 +285,8 @@ getImputeWeights <- function(ArchRProj = NULL){
 imputeMatrix <- function(
   mat = NULL,
   imputeWeights = NULL,
+  mat_colnames = NULL,
+  mat_rownames = NULL,
   threads = getArchRThreads(),
   verbose = FALSE,
   logFile = createLogFile("imputeMatrix")
@@ -320,6 +322,21 @@ imputeMatrix <- function(
   # Determine matrix type for appropriate operations
   is_spam <- inherits(mat, "spam")
 
+  # Get column and row names - use provided names for spam matrices
+  if (is_spam) {
+    if (is.null(mat_colnames)) {
+      stop("Column names must be provided for spam matrices")
+    }
+    if (is.null(mat_rownames)) {
+      stop("Row names must be provided for spam matrices")
+    }
+    col_names <- mat_colnames
+    row_names <- mat_rownames
+  } else {
+    col_names <- colnames(mat)
+    row_names <- rownames(mat)
+  }
+
   imputeMat <- lapply(seq_along(weightList), function(x) {
 
     .logDiffTime(sprintf("Imputing Matrix (%s of %s)", x, length(weightList)), tstart, verbose = verbose, logFile = logFile)
@@ -345,10 +362,10 @@ imputeMatrix <- function(
         rownames(by) <- bn
 
         #Multiply
-        if (!all(paste0(bn) %in% colnames(mat))) {
+        if (!all(paste0(bn) %in% col_names)) {
           .logThis(paste0(bn), "Block cellNames", logFile = logFile)
-          .logThis(colnames(mat), "Matrix cellNames", logFile = logFile)
-          .logThis(paste0(bn)[paste0(bn) %ni% colnames(mat)], "Block cellNames not in matrix", logFile = logFile)
+          .logThis(col_names, "Matrix cellNames", logFile = logFile)
+          .logThis(paste0(bn)[paste0(bn) %ni% col_names], "Block cellNames not in matrix", logFile = logFile)
           .logMessage("Not all cellNames from imputeWeights are present. If you subsetted cells from the original imputation, please re-run with addImputeWeights!")
           stop("Not all cellNames from imputeWeights are present. If you subsetted cells from the original imputation, please re-run with addImputeWeights!")
         }
@@ -357,19 +374,16 @@ imputeMatrix <- function(
         if (is_spam) {
           # For spam matrices, use spam-specific operations
           # Get column indices for subsetting
-          col_indices <- match(paste0(bn), colnames(mat))
+          col_indices <- match(paste0(bn), col_names)
           mat_subset <- mat[, col_indices, drop = FALSE]
 
-          # Convert weight matrix to spam if needed
-          if (!inherits(by, "spam")) {
-            by_spam <- spam::as.spam(by)
-          } else {
-            by_spam <- by
-          }
+          # Coerce 'by' to spam
+          if (!inherits(by, "spam"))
+            by <- spam::as.spam(by)
 
           # Matrix multiplication with spam
           # t(by %*% t(mat_subset))
-          result <- spam::t.spam(by_spam %*% spam::t.spam(mat_subset))
+          result <- spam::t.spam(by %*% spam::t.spam(mat_subset))
 
         } else {
           # Original Matrix operations
@@ -406,18 +420,14 @@ imputeMatrix <- function(
 
         if (is_spam) {
           # For spam matrices
-          col_indices <- match(paste0(weight_colnames), colnames(mat))
+          col_indices <- match(paste0(weight_colnames), col_names)
           mat_subset <- mat[, col_indices, drop = FALSE]
 
-          # Convert weight matrix to spam if needed
-          if (!inherits(weight_mat, "spam")) {
-            weight_spam <- spam::as.spam(as.matrix(weight_mat))
-          } else {
-            weight_spam <- weight_mat
-          }
+          if (!inherits(weight_mat, "spam"))
+            weight_mat <- spam::as.spam(weight_mat)
 
           # Matrix multiplication
-          result <- spam::t.spam(weight_spam %*% spam::t.spam(mat_subset))
+          result <- spam::t.spam(weight_mat %*% spam::t.spam(mat_subset))
 
         } else {
 
@@ -440,15 +450,6 @@ imputeMatrix <- function(
         }
       }
       if (verbose) message("")
-    }
-
-    # Return ordered - handle both spam and Matrix
-    if (is_spam) {
-      # For spam matrices, reorder columns
-      col_order <- match(colnames(mat), colnames(matx))
-      matx[, col_order, drop = FALSE]
-    } else {
-      matx[, colnames(mat)] #Return Ordered
     }
 
   }) %>% {
