@@ -452,6 +452,8 @@ imputeMatrix <- function(
       if (verbose) message("")
     }
 
+    return(matx)
+
   }) %>% {
     if (is_spam) {
       # Use spam addition
@@ -467,5 +469,5 @@ imputeMatrix <- function(
 
   .logDiffTime("Finished Imputing Matrix", tstart, verbose = verbose, logFile = logFile)
 
-  imputeMat
+  return(imputeMat)
 }
