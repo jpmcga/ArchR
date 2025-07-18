@@ -288,7 +288,7 @@ imputeMatrix <- function(
   mat_colnames = NULL,
   threads = getArchRThreads(),
   verbose = FALSE,
-  logFile = createLogFile("imputeMatrix")
+  logFile = createLogFile("imputeMatrix_spam")
 ) {
   .validInput(input = mat, name = "mat", valid = c("matrix", "sparseMatrix", "spam"))
   .validInput(input = imputeWeights, name = "imputeWeights", valid = c("list"))
