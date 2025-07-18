@@ -286,7 +286,6 @@ imputeMatrix <- function(
   mat = NULL,
   imputeWeights = NULL,
   mat_colnames = NULL,
-  mat_rownames = NULL,
   threads = getArchRThreads(),
   verbose = FALSE,
   logFile = createLogFile("imputeMatrix")
@@ -331,10 +330,8 @@ imputeMatrix <- function(
       stop("Row names must be provided for spam matrices")
     }
     col_names <- mat_colnames
-    row_names <- mat_rownames
   } else {
     col_names <- colnames(mat)
-    row_names <- rownames(mat)
   }
 
   imputeMat <- lapply(seq_along(weightList), function(x) {
@@ -375,6 +372,7 @@ imputeMatrix <- function(
           # For spam matrices, use spam-specific operations
           # Get column indices for subsetting
           col_indices <- match(paste0(bn), col_names)
+          perm <- order(col_indices) # original order
           mat_subset <- mat[, col_indices, drop = FALSE]
 
           # Coerce 'by' to spam
@@ -384,6 +382,7 @@ imputeMatrix <- function(
           # Matrix multiplication with spam
           # t(by %*% t(mat_subset))
           result <- spam::t.spam(by %*% spam::t.spam(mat_subset))
+          result <- result[, perm, drop = FALSE]
 
         } else {
           # Original Matrix operations
@@ -421,6 +420,7 @@ imputeMatrix <- function(
         if (is_spam) {
           # For spam matrices
           col_indices <- match(paste0(weight_colnames), col_names)
+          perm <- order(col_indices) # original order
           mat_subset <- mat[, col_indices, drop = FALSE]
 
           if (!inherits(weight_mat, "spam"))
@@ -428,12 +428,12 @@ imputeMatrix <- function(
 
           # Matrix multiplication
           result <- spam::t.spam(weight_mat %*% spam::t.spam(mat_subset))
+          result <- result[, perm, drop = FALSE]
 
         } else {
 
           # Original Matrix operations
           result <- Matrix::t(as.matrix(weight_mat) %*% Matrix::t(mat[, paste0(weight_colnames), drop = FALSE]))
-
         }
 
         return(result)
