@@ -289,9 +289,8 @@ imputeMatrix <- function(
   mat_rownames = NULL,
   threads = getArchRThreads(),
   verbose = FALSE,
-  logFile = createLogFile("imputeMatrix_new")
+  logFile = createLogFile("imputeMatrix")
 ) {
-  print("New imputation function!")
   .validInput(input = mat, name = "mat", valid = c("matrix", "sparseMatrix", "spam"))
   .validInput(input = imputeWeights, name = "imputeWeights", valid = c("list"))
   .validInput(input = threads, name = "threads", valid = c("integer"))
@@ -351,18 +350,7 @@ imputeMatrix <- function(
       }
       h5df <- h5ls(weightList[[x]])
       blocks <- gtools::mixedsort(grep("block", h5df$name, value = TRUE))
-      # Pre-allocate result matrix of correct size
-      if (is_spam) {
-        # For spam matrices, we'll need to collect results and combine at the end
-        # since spam matrices don't support direct column assignment easily
-        matx <- spam::spam(x = 0, nrow = nrow(mat), ncol = ncol(mat))
-      } else {
-        # For regular matrices, pre-allocate sparse matrix
-        matx <- Matrix::Matrix(0, nrow = nrow(mat), ncol = ncol(mat), sparse = TRUE)
-      }
-      
-      # Process blocks and write results to correct column positions
-      .safelapply(seq_along(blocks), function(y) {
+      matx <- .safelapply(seq_along(blocks), function(y) {
 
         if (verbose) message(y, " ", appendLF = FALSE)
         .logMessage(paste0(y, " of ", length(blocks)),  logFile = logFile)
@@ -382,69 +370,46 @@ imputeMatrix <- function(
           stop("Not all cellNames from imputeWeights are present. If you subsetted cells from the original imputation, please re-run with addImputeWeights!")
         }
 
-        # Get the intersection of cells that are in both weight matrix and data matrix
-        common_cells <- intersect(paste0(bn), col_names)
-
-        # Get column indices in the final matrix where results should go
-        final_col_indices <- match(common_cells, col_names)
-
         # Handle matrix operations based on type
         if (is_spam) {
           # For spam matrices, use spam-specific operations
-          # Get column indices for subsetting - use common cells in matrix order
-          col_indices <- match(common_cells, col_names)
+          # Get column indices for subsetting
+          col_indices <- match(paste0(bn), col_names)
           mat_subset <- mat[, col_indices, drop = FALSE]
-
-          # Reorder weight matrix to match matrix column order
-          weight_indices <- match(common_cells, paste0(bn))
-          by_reordered <- by[weight_indices, weight_indices, drop = FALSE]
 
           # Coerce 'by' to spam
-          if (!inherits(by_reordered, "spam"))
-            by_reordered <- spam::as.spam(by_reordered)
+          if (!inherits(by, "spam"))
+            by <- spam::as.spam(by)
 
           # Matrix multiplication with spam
-          result <- spam::t.spam(by_reordered %*% spam::t.spam(mat_subset))
-
-          # Write results to correct columns (spam matrices need special handling)
-          matx[, final_col_indices] <- result
+          # t(by %*% t(mat_subset))
+          result <- spam::t.spam(by %*% spam::t.spam(mat_subset))
 
         } else {
-          # Original Matrix operations - reorder to match matrix column order
-          col_indices <- match(common_cells, col_names)
-          mat_subset <- mat[, col_indices, drop = FALSE]
-
-          # Reorder weight matrix to match matrix column order
-          weight_indices <- match(common_cells, paste0(bn))
-          by_reordered <- by[weight_indices, weight_indices, drop = FALSE]
-
-          result <- Matrix::t(by_reordered %*% Matrix::t(mat_subset))
-
-          # Write results to correct columns
-          matx[, final_col_indices] <- result
+          # Original Matrix operations
+          result <- Matrix::t(by %*% Matrix::t(mat[, paste0(bn), drop = FALSE]))
         }
 
-        return(NULL)  # No need to return anything
+        return(result)
 
-      }, threads = threads)
+      }, threads = threads) %>% {
+
+        if (is_spam) {
+          # Use spam cbind
+          do.call(spam::cbind.spam, .)
+
+        } else {
+          # Use regular cbind
+          Reduce("cbind", .)
+        }
+      }
       if (verbose) message("")
 
     } else {
 
       .logMessage("Using weights in memory", logFile = logFile)
 
-      # Pre-allocate result matrix of correct size
-      if (is_spam) {
-        # For spam matrices, we'll need to collect results and combine at the end
-        # since spam matrices don't support direct column assignment easily
-        matx <- spam::spam(x = 0, nrow = nrow(mat), ncol = ncol(mat))
-      } else {
-        # For regular matrices, pre-allocate sparse matrix
-        matx <- Matrix::Matrix(0, nrow = nrow(mat), ncol = ncol(mat), sparse = TRUE)
-      }
-      
-      # Process blocks and write results to correct column positions
-      .safelapply(seq_along(weightList[[x]]), function(y) {
+      matx <- .safelapply(seq_along(weightList[[x]]), function(y) {
 
         if (verbose) message(y, " ", appendLF = FALSE)
         .logMessage(paste0(y, " of ", length(weightList[[x]])), logFile = logFile)
@@ -453,50 +418,37 @@ imputeMatrix <- function(
         weight_mat <- weightList[[x]][[y]]
         weight_colnames <- colnames(weight_mat)
 
-        # Get the intersection of cells that are in both weight matrix and data matrix
-        common_cells <- intersect(paste0(weight_colnames), col_names)
-        
-        # Get column indices in the final matrix where results should go
-        final_col_indices <- match(common_cells, col_names)
-
         if (is_spam) {
           # For spam matrices
-          col_indices <- match(common_cells, col_names)
+          col_indices <- match(paste0(weight_colnames), col_names)
           mat_subset <- mat[, col_indices, drop = FALSE]
 
-          # Reorder weight matrix to match matrix column order
-          weight_indices <- match(common_cells, paste0(weight_colnames))
-          weight_mat_reordered <- weight_mat[weight_indices, weight_indices, drop = FALSE]
-
-          if (!inherits(weight_mat_reordered, "spam"))
-            weight_mat_reordered <- spam::as.spam(weight_mat_reordered)
+          if (!inherits(weight_mat, "spam"))
+            weight_mat <- spam::as.spam(weight_mat)
 
           # Matrix multiplication
-          result <- spam::t.spam(weight_mat_reordered %*% spam::t.spam(mat_subset))
-          
-          # Write results to correct columns
-          matx[, final_col_indices] <- result
+          result <- spam::t.spam(weight_mat %*% spam::t.spam(mat_subset))
 
         } else {
 
           # Original Matrix operations
-          col_indices <- match(common_cells, col_names)
-          mat_subset <- mat[, col_indices, drop = FALSE]
-          
-          # Reorder weight matrix to match matrix column order
-          weight_indices <- match(common_cells, paste0(weight_colnames))
-          weight_mat_reordered <- weight_mat[weight_indices, weight_indices, drop = FALSE]
-          
-          result <- Matrix::t(as.matrix(weight_mat_reordered) %*% Matrix::t(mat_subset))
-          
-          # Write results to correct columns
-          matx[, final_col_indices] <- result
+          result <- Matrix::t(as.matrix(weight_mat) %*% Matrix::t(mat[, paste0(weight_colnames), drop = FALSE]))
 
         }
 
-        return(NULL)  # No need to return anything
+        return(result)
 
-      }, threads = threads)
+      }, threads = threads) %>% {
+
+        if (is_spam) {
+          # Use spam cbind
+          do.call(spam::cbind.spam, .)
+
+        } else {
+          # Use regular cbind
+          Reduce("cbind", .)
+        }
+      }
       if (verbose) message("")
     }
 
