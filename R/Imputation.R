@@ -288,7 +288,7 @@ imputeMatrix <- function(
   mat_colnames = NULL,
   threads = getArchRThreads(),
   verbose = FALSE,
-  logFile = createLogFile("imputeMatrix_spam")
+  logFile = createLogFile("imputeMatrix")
 ) {
   .validInput(input = mat, name = "mat", valid = c("matrix", "sparseMatrix", "spam"))
   .validInput(input = imputeWeights, name = "imputeWeights", valid = c("list"))
@@ -325,9 +325,6 @@ imputeMatrix <- function(
   if (is_spam) {
     if (is.null(mat_colnames)) {
       stop("Column names must be provided for spam matrices")
-    }
-    if (is.null(mat_rownames)) {
-      stop("Row names must be provided for spam matrices")
     }
     col_names <- mat_colnames
   } else {
