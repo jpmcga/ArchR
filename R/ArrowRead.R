@@ -254,7 +254,7 @@ getFragmentsFromArrow <- function(
 #' This is often desired when working with insertion counts. Note that if the matrix has already been binarized previously, this should be set to `TRUE`.
 #' @param logFile The path to a file to be used for logging ArchR output.
 #' @export
-ggetMatrixFromProject <- function(
+getMatrixFromProject <- function(
   ArchRProj = NULL,
   useMatrix = "GeneScoreMatrix",
   useSeqnames = NULL,
