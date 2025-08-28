@@ -258,7 +258,6 @@ getMatrixFromProject <- function(
   ArchRProj = NULL,
   useMatrix = "GeneScoreMatrix",
   useSeqnames = NULL,
-  excludeChr = NULL,
   verbose = TRUE,
   binarize = FALSE,
   threads = getArchRThreads(),
@@ -269,7 +268,6 @@ getMatrixFromProject <- function(
   .validInput(input = ArchRProj, name = "ArchRProj", valid = c("ArchRProj"))
   .validInput(input = useMatrix, name = "useMatrix", valid = c("character"))
   .validInput(input = useSeqnames, name = "useSeqnames", valid = c("character","null"))
-  .validInput(input = excludeChr, name = "excludeChr", valid = c("character", "null"))
   .validInput(input = verbose, name = "verbose", valid = c("boolean"))
   .validInput(input = binarize, name = "binarize", valid = c("boolean"))
   .validInput(input = threads, name = "threads", valid = c("integer"))
@@ -301,8 +299,7 @@ getMatrixFromProject <- function(
         ArrowFile = ArrowFiles[x],
         useMatrix = useMatrix,
         useSeqnames = useSeqnames,
-        excludeChr = excludeChr,
-        cellNames = allCells, 
+        cellNames = allCells,
         ArchRProj = ArchRProj,
         verbose = FALSE,
         binarize = binarize,
