@@ -254,19 +254,22 @@ getFragmentsFromArrow <- function(
 #' This is often desired when working with insertion counts. Note that if the matrix has already been binarized previously, this should be set to `TRUE`.
 #' @param logFile The path to a file to be used for logging ArchR output.
 #' @export
-getMatrixFromProject <- function(
+ggetMatrixFromProject <- function(
   ArchRProj = NULL,
   useMatrix = "GeneScoreMatrix",
   useSeqnames = NULL,
+  excludeChr = NULL,
   verbose = TRUE,
   binarize = FALSE,
   threads = getArchRThreads(),
-  logFile = createLogFile("getMatrixFromProject")
+  logFile = createLogFile("getMatrixFromProject"),
+  asMatrix = FALSE
   ){
 
   .validInput(input = ArchRProj, name = "ArchRProj", valid = c("ArchRProj"))
   .validInput(input = useMatrix, name = "useMatrix", valid = c("character"))
   .validInput(input = useSeqnames, name = "useSeqnames", valid = c("character","null"))
+  .validInput(input = excludeChr, name = "excludeChr", valid = c("character", "null"))
   .validInput(input = verbose, name = "verbose", valid = c("boolean"))
   .validInput(input = binarize, name = "binarize", valid = c("boolean"))
   .validInput(input = threads, name = "threads", valid = c("integer"))
@@ -298,6 +301,7 @@ getMatrixFromProject <- function(
         ArrowFile = ArrowFiles[x],
         useMatrix = useMatrix,
         useSeqnames = useSeqnames,
+        excludeChr = excludeChr,
         cellNames = allCells, 
         ArchRProj = ArchRProj,
         verbose = FALSE,
@@ -348,10 +352,19 @@ getMatrixFromProject <- function(
   nAssays <- names(assays(seL[[1]]))
   asy <- lapply(seq_along(nAssays), function(i){
     .logDiffTime(sprintf("Organizing Assays (%s of %s)", i, length(nAssays)), t1 = tstart, verbose = verbose, logFile = logFile)
+
     m <- lapply(seq_along(seL), function(j){
-      assays(seL[[j]])[[nAssays[i]]]
-    }) %>% Reduce("cbind", .)
-    m
+      mat <- assays(seL[[j]])[[nAssays[i]]]
+
+      if (asMatrix) {
+        message("Converting sparse matrix to dense matrix for object ", j, ", assay: ", nAssays[i])
+        mat <- as.matrix(mat)
+      }
+
+      return(mat)
+    }) %>% Reduce("cbind", .)  # combines dense matrices safely
+
+    return(m)
   }) %>% SimpleList()
   names(asy) <- nAssays
   
