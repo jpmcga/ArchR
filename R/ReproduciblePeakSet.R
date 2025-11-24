@@ -540,6 +540,15 @@ addReproduciblePeakSet <- function(
 		addDOC = TRUE
 	)
   }
+  
+  peakSummary <- tryCatch(metadata(ArchRProj@peakSet)$PeakCallSummary, error = function(x) NULL)
+  if(!is.null(peakSummary)){
+    dir.create(outDir, showWarnings = FALSE)
+    peakSummaryCSV <- file.path(outDir, paste0(groupBy, "_Peak-Call-Summary.csv"))
+    tryCatch(utils::write.csv(peakSummary, peakSummaryCSV, row.names = FALSE), error = function(e){
+      .logMessage(sprintf("Failed to write PeakCallSummary CSV (%s)", e$message), logFile = logFile)
+    })
+  }
 
 	.logDiffTime(sprintf("Finished Creating Union Peak Set (%s)!", length(unionPeaks)), tstart, verbose = verbose, logFile = logFile)
 
