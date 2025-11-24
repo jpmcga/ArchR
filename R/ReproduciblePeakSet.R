@@ -533,7 +533,7 @@ addReproduciblePeakSet <- function(
   if(plot){
     plotPDF(
 		.plotPeakCallSummary(ArchRProj),
-		name = paste0(groupBy, "_Peak-Call-Summary")
+		name = paste0(groupBy, "_Peak-Call-Summary"),
 		width = 8,
 		height = 5,
 		ArchRProj = ArchRProj,
