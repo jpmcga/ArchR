@@ -66,7 +66,7 @@ addReproduciblePeakSet <- function(
 	promoterRegion = c(2000, 100),
 	genomeAnnotation = getGenomeAnnotation(ArchRProj),
 	geneAnnotation = getGeneAnnotation(ArchRProj),
-  plot = TRUE,
+  	plot = TRUE,
 	threads = getArchRThreads(),
 	parallelParam = NULL,
 	force = FALSE,
@@ -531,7 +531,14 @@ addReproduciblePeakSet <- function(
 	ArchRProj <- addPeakSet(ArchRProj, unionPeaks, force = TRUE)
 
   if(plot){
-    plotPDF(.plotPeakCallSummary(ArchRProj), name = "Peak-Call-Summary", width = 8, height = 5, ArchRProj = ArchRProj, addDOC = FALSE)
+    plotPDF(
+		.plotPeakCallSummary(ArchRProj),
+		name = paste0(groupBy, "_Peak-Call-Summary")
+		width = 8,
+		height = 5,
+		ArchRProj = ArchRProj,
+		addDOC = TRUE
+	)
   }
 
 	.logDiffTime(sprintf("Finished Creating Union Peak Set (%s)!", length(unionPeaks)), tstart, verbose = verbose, logFile = logFile)

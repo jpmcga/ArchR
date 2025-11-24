@@ -14,7 +14,7 @@ LazyData: TRUE
 RoxygenNote: 7.1.2
 Encoding: UTF-8
 Imports:
-    ggplot2,
+    ggplot2 (< 3.5.0),
     SummarizedExperiment,
     data.table,
     Matrix,
