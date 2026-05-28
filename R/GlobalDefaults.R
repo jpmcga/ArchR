@@ -48,6 +48,7 @@ ArchRDependency <- c(
   #Package Startup
   v <- packageVersion("ArchR")
   packageStartupMessage("ArchR : Version ", v, "\nFor more information see our website : www.ArchRProject.com\nIf you encounter a bug please report : https://github.com/GreenleafLab/ArchR/issues")
+  packageStartupMessage("ArchR : Custom local build with optimized closest-cell marker matching.")
   
   #Load Packages
   packageStartupMessage("Loading Required Packages...")
