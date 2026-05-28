@@ -696,24 +696,32 @@ getMarkerFeatures <- function(
 
       .logMessage("Using the closest cells identified by KKN between the foreground and background", verbose = TRUE, logFile = logFile)
       sortedCells <- .computeClostestCellsList(inputNormQ[idB, ,drop=FALSE], inputNormQ[idF, ,drop=FALSE], k = k2)
-      idX <- c()
-      inspected_cells <- c()
-      idY <- c()
+      cellsSorted <- sortedCells$Cells
+      bgdSorted <- sortedCells$Bgd
+      inspectedCells <- rep(FALSE, length(idF))
+      usedCells <- rep(FALSE, length(idF))
+      usedBgd <- rep(FALSE, length(idB))
       i <- 1
       df_counter <- 1
       
       sx <- idF
       minTotal <- min(n, length(sx) * bufferRatio)
       nx <- sort(floor(minTotal * bgdProbx))
+      maxMatches <- if (length(bgdGroups)==1) min(length(idB), length(idF)) else floor(minTotal)
+      idX <- integer(maxMatches)
+      idY <- integer(maxMatches)
       
       if (length(bgdGroups)==1){
 
-        upper_border <- min(length(idB), length(idF))
-        while (i <= upper_border & df_counter <= nrow(sortedCells)){
-          inspected_cells <- append(inspected_cells, sortedCells$Cells[df_counter])
-          if (sortedCells$Cells[df_counter] %ni% idX && sortedCells$Bgd[df_counter] %ni% idY){
-            idX <- append(idX, sortedCells$Cells[df_counter])
-            idY <- append(idY, sortedCells$Bgd[df_counter])
+        while (i <= maxMatches & df_counter <= nrow(sortedCells)){
+          celli <- cellsSorted[df_counter]
+          bgdi <- bgdSorted[df_counter]
+          inspectedCells[celli] <- TRUE
+          if (!usedCells[celli] && !usedBgd[bgdi]){
+            idX[i] <- celli
+            idY[i] <- bgdi
+            usedCells[celli] <- TRUE
+            usedBgd[bgdi] <- TRUE
             i <- i + 1
           }
           df_counter <- df_counter + 1 
@@ -721,13 +729,17 @@ getMarkerFeatures <- function(
 
       }else{
 
-        while (i <= floor(minTotal) & df_counter <= nrow(sortedCells)){
-          inspected_cells <- append(inspected_cells, sortedCells$Cells[df_counter])
-          if (sortedCells$Cells[df_counter] %ni% idX && sortedCells$Bgd[df_counter] %ni% idY){
-            groupitx <- match(groups[idB][sortedCells$Bgd[df_counter]],names(nx))
+        while (i <= maxMatches & df_counter <= nrow(sortedCells)){
+          celli <- cellsSorted[df_counter]
+          bgdi <- bgdSorted[df_counter]
+          inspectedCells[celli] <- TRUE
+          if (!usedCells[celli] && !usedBgd[bgdi]){
+            groupitx <- match(groups[idB][bgdi],names(nx))
             if (nx[groupitx] > 0){
-              idX <- append(idX, sortedCells$Cells[df_counter])
-              idY <- append(idY, sortedCells$Bgd[df_counter])
+              idX[i] <- celli
+              idY[i] <- bgdi
+              usedCells[celli] <- TRUE
+              usedBgd[bgdi] <- TRUE
               i <- i + 1
               nx[groupitx] <- nx[groupitx]-1
             }
@@ -736,7 +748,9 @@ getMarkerFeatures <- function(
         }
       }
 
-      it <- length(unique(inspected_cells))
+      idX <- idX[seq_len(i - 1)]
+      idY <- idY[seq_len(i - 1)]
+      it <- sum(inspectedCells)
       
     } else{
   
@@ -882,15 +896,16 @@ getMarkerFeatures <- function(
   nn1 <- nabor::knn(data = data, query = query, k = k, ...)
   dists <- nn1$nn.dists
   indxs <- nn1$nn.idx
-  data <- c()
-  elements_len <- dim(indxs)[2]
-  for (i in seq_len(dim(indxs)[1])){
-    new_part <- cbind(rep(i, elements_len), indxs[i,], dists[i,])
-    data <- rbind(data, new_part)
-  }
-  pairs_dist_df <- as.data.frame(data)
-  colnames(pairs_dist_df) <- c("Cells", "Bgd", "Dist")
-  pairs_dist_df <- pairs_dist_df[order(pairs_dist_df$Dist),,drop=FALSE]
+  elements_len <- ncol(indxs)
+  cells <- rep(seq_len(nrow(indxs)), each = elements_len)
+  bgd <- as.vector(t(indxs))
+  dist <- as.vector(t(dists))
+  o <- order(dist)
+  pairs_dist_df <- data.frame(
+    Cells = cells[o],
+    Bgd = bgd[o],
+    Dist = dist[o]
+  )
   pairs_dist_df
 }
 
